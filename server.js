@@ -84,7 +84,7 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
     console.error('[SERVER ERROR]', err.stack);
     res.status(500).json({ error: 'Terjadi kesalahan pada server' });
-})
+});
 
 // Batas untuk menjalankann server
 app.listen(PORT, '0.0.0.0', () => {
