@@ -156,14 +156,17 @@ app.delete('/movies/:id', [authenticateToken, authorizeRole('admin')], async (re
 // === DIRECTOR ROUTES (TUGAS PRAKTIKUM) ===
 
 // GET Semua Directors
-app.get('/directors', async (req, res, next) => {
-    const sql = `SELECT id, name, "birthYear" FROM directors ORDER BY id ASC`;
-    try {
-        const result = await db.query(sql);
-        res.json(result.rows);
-    } catch (err) {
-        next(err);
-    }
+app.get("/directors", async (req, res, next) => {
+  const sql = `SELECT d.id, d.name, d."birthYear", m.id as movie_id, m.title as movie_title
+  FROM directors d
+  LEFT JOIN movies m ON d.id = m.director_id
+  ORDER BY d.id ASC`;
+  try {
+    const result = await db.query(sql);
+    res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // GET Director berdasarkan ID
