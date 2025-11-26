@@ -77,6 +77,165 @@ app.post('/auth/login', async (req, res, next) => {
     }
 });
 
+// Movies ini
+app.get('/movies', async (req, res, next) => {
+    const sql = `
+        SELECT m.id, m.title, m.year, d.id as director_id, d.name as director_name
+        FROM movies m
+        LEFT JOIN directors d ON m.director_id = d.id
+        ORDER BY m.id ASC
+    `;
+    try {
+        const result = await db.query(sql);
+        res.json(result.rows);
+    } catch (err) {
+        next(err);
+    }
+});
+
+app.get('/movies/:id', async (req, res, next) => {
+    const sql = `
+        SELECT m.id, m.title, m.year, d.id as director_id, d.name as director_name
+        FROM movies m
+        LEFT JOIN directors d ON m.director_id = d.id
+        WHERE m.id = $1
+    `;
+    try {
+        const result = await db.query(sql, [req.params.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Film tidak ditemukan' });
+        }
+        res.json(result.rows[0]);
+    } catch (err) {
+        next(err);
+    }
+});
+
+app.post('/movies', authenticateToken, async (req, res, next) => {
+    const { title, director_id, year } = req.body;
+    if (!title || !director_id || !year) {
+        return res.status(400).json({ error: 'title, director_id, year wajib diisi' });
+    }
+    const sql = `INSERT INTO movies (title, director_id, year) VALUES ($1, $2, $3) RETURNING *`;
+    try {
+        const result = await db.query(sql, [title, director_id, year]);
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        next(err);
+    }
+});
+
+app.put('/movies/:id', [authenticateToken, authorizeRole('admin')], async (req, res, next) => {
+    const { title, director_id, year } = req.body;
+    const sql = `UPDATE movies SET title = $1, director_id = $2, year = $3 WHERE id = $4 RETURNING *`;
+    try {
+        const result = await db.query(sql, [title, director_id, year, req.params.id]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Film tidak ditemukan' });
+        }
+        res.json(result.rows[0]);
+    } catch (err) {
+        next(err);
+    }
+});
+
+app.delete('/movies/:id', [authenticateToken, authorizeRole('admin')], async (req, res, next) => {
+    const sql = `DELETE FROM movies WHERE id = $1 RETURNING *`;
+    try {
+        const result = await db.query(sql, [req.params.id]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Film tidak ditemukan' });
+        }
+        res.status(204).send();
+    } catch (err) {
+        next(err);
+    }
+});
+
+
+// === DIRECTOR ROUTES (TUGAS PRAKTIKUM) ===
+
+// GET Semua Directors
+app.get('/directors', async (req, res, next) => {
+    const sql = `SELECT id, name, "birthYear" FROM directors ORDER BY id ASC`;
+    try {
+        const result = await db.query(sql);
+        res.json(result.rows);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// GET Director berdasarkan ID
+app.get('/directors/:id', async (req, res, next) => {
+    const sql = `SELECT id, name, "birthYear" FROM directors WHERE id = $1`;
+    try {
+        const result = await db.query(sql, [req.params.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Direktur tidak ditemukan' });
+        }
+        res.json(result.rows[0]);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// POST (Tambah Director) - Memerlukan autentikasi
+app.post('/directors', authenticateToken, async (req, res, next) => {
+    const { name, birthYear } = req.body;
+    if (!name || !birthYear) {
+        return res.status(400).json({ error: 'name dan birthYear wajib diisi' });
+    }
+    const sql = `INSERT INTO directors (name, "birthYear") VALUES ($1, $2) RETURNING *`;
+    try {
+        // Menggunakan birthYear (camelCase) dari body ke birth_year (snake_case) di SQL
+        const result = await db.query(sql, [name, birthYear]);
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// PUT (Update Director) - Memerlukan autentikasi & role 'admin'
+app.put('/directors/:id', [authenticateToken, authorizeRole('admin')], async (req, res, next) => {
+    const { name, birthYear } = req.body;
+    if (!name && !birthYear) {
+         return res.status(400).json({ error: 'Setidaknya name atau birthYear harus diisi untuk update' });
+    }
+    
+    // Query dinamis sederhana: update keduanya, asumsi body akan mengirimkan kedua field saat update
+    const sql = `UPDATE directors SET name = $1, "birthYear" = $2 WHERE id = $3 RETURNING *`;
+    try {
+        const result = await db.query(sql, [name, birthYear, req.params.id]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Direktur tidak ditemukan' });
+        }
+        res.json(result.rows[0]);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// DELETE (Hapus Director) - Memerlukan autentikasi & role 'admin'
+app.delete('/directors/:id', [authenticateToken, authorizeRole('admin')], async (req, res, next) => {
+    const sql = 'DELETE FROM directors WHERE id = $1 RETURNING *';
+    try {
+        const result = await db.query(sql, [req.params.id]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Direktur tidak ditemukan' });
+        }
+        res.status(204).send(); // Status 204 No Content untuk DELETE berhasil
+    } catch (err) {
+        // Handle error jika ada foreign key constraint (direktur masih memiliki film)
+        if (err.code === '23503') { 
+            return res.status(409).json({ error: 'Direktur tidak dapat dihapus karena masih terkait dengan film' });
+        }
+        next(err);
+    }
+});
+
+
+// === FALLBACK & ERROR HANDLING ===
 app.use((req, res) => {
     res.status(404).json({ error: 'Rute tidak ditemukan' });
 });
